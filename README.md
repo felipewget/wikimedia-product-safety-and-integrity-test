@@ -14,6 +14,12 @@ Question 1
 In `api.php`, work through the TODOs using your
 creativity and judgment. Please only update the api.php file.
 
+TODO A: Improve readability and clean up the following code to prepare for adding new handlers and routes.
+* "echo json_encode()" is being repeated many times, I'll create on "response" method/function for that
+* if/else if/else can be hard to follow, I'll try to use one match(true) or if the condition keeps to one variable, one looping checking the route by param
+* I'll create one handler for each route
+* We have one structural code on api.php, I'm not sure if I should convert this code to OOP, even more because all updates will keep on api.php, everything will keep on api.php(as required) but repeated code will go to one kind of utils/helpers and I'll add one addapter pattern for repeated code to handler classes. I can develop in structural way as well, let me know pls if you would like to see it in structural code (: 
+
 Question 2
 
 Anyone who visits our site can make an edit. We would like to store the IP
