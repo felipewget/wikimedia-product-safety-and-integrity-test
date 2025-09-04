@@ -26,11 +26,13 @@ class Utils
 
 	static function getParam(string $name): ?string
 	{
-		if (!isset($_GET[$name])) {
+		$value = $_GET[$name] ?? null;
+
+		if (is_null($value)) {
 			return null;
 		}
 
-		return trim($_GET[$name]);
+		return htmlspecialchars(trim($value), ENT_QUOTES, 'UTF-8');
 	}
 }
 
@@ -44,19 +46,27 @@ abstract class Handler
 
 	abstract public function handle(): void;
 
-	protected function response(array|string $data): void
+	protected function response(array|string $data, int $statusCode = 200): void
 	{
+		http_response_code($statusCode);
 		header('Content-Type: application/json; charset=utf-8');
 		echo json_encode(['content' => $data]);
 		exit;
 	}
 
-	protected function paginate($page){
+	protected function paginate($page)
+	{
 		$page = max(1, $page);
-    	
+
 		$from = ($page - 1) * self::LIMIT;
-    
+
 		return ['from' => $from, 'to' => self::LIMIT];
+	}
+
+	protected function searchInputValidate($search){
+		if(strlen($search) > 15){
+			$this->response(['error' => 'Query is too long'], 400);
+		}
 	}
 }
 
@@ -70,9 +80,9 @@ class ListAllHandler extends Handler
 	public function handle(): void
 	{
 		$pagination = $this->paginate($this->page);
-		
+
 		$articles = array_slice($this->app->getListOfArticles(), $pagination['from'], $pagination['to']);
-		
+
 		$this->response($articles);
 	}
 }
@@ -82,25 +92,27 @@ class ListAllHandler extends Handler
  */
 class PrefixSearchHandler extends Handler
 {
-	public function __construct(private App $app, private string $prefix, private ?int $page = 1) {}
+	public function __construct(private App $app, private string $prefix, private ?int $page = 1) {
+		$this->searchInputValidate($this->prefix);
+	}
 
 	public function handle(): void
 	{
 		$filtered = Utils::cache('article_prefix_' . $this->prefix . '_page_' . $this->page, 5, function () {
-	
-            $prefix = mb_strtolower($this->prefix);
 
-            $articles = array_filter(
-                $this->app->getListOfArticles(),
-                fn($article) => mb_stripos($article, $prefix) === 0
-            );
+			$prefix = mb_strtolower($this->prefix);
+
+			$articles = array_filter(
+				$this->app->getListOfArticles(),
+				fn($article) => mb_stripos($article, $prefix) === 0
+			);
 
 			$pagination = $this->paginate($this->page);
 
-            return array_slice($articles, $pagination['from'], $pagination['to']);
-        });
+			return array_slice($articles, $pagination['from'], $pagination['to']);
+		});
 
-        $this->response(array_values($filtered));
+		$this->response(array_values($filtered));
 	}
 }
 
@@ -109,18 +121,24 @@ class PrefixSearchHandler extends Handler
  */
 class TitleSearchHandler extends Handler
 {
-	public function __construct(private App $app, private string $title) {}
+	public function __construct(private App $app, private string $title) {
+		$this->searchInputValidate($this->title);
+	}
 
 	public function handle(): void
 	{
+		if (!file_exists("articles/{$this->title}")) {
+			$this->response(['error' => 'Article not found'], 404);
+		}
+
 		$this->response($this->app->fetch(['title' => $this->title]));
 	}
 }
 
-$app = new App();
 // TODO A: Improve readability and clean up the following code to prepare for adding new handlers and routes.
 // TODO B: Address performance concerns.
 // TODO C: Identify and solve any potential security vulnerabilities in this code.
+$app = new App();
 
 $routes = [
 	'prefix' => fn($value) => (new PrefixSearchHandler($app, $value, Utils::getParam('page')))->handle(),
@@ -129,7 +147,6 @@ $routes = [
 
 foreach ($routes as $param => $handler) {
 	$search = Utils::getParam($param);
-
 	if (!is_null($search)) {
 		$handler($search);
 	}
