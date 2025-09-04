@@ -14,6 +14,43 @@ Question 1
 In `api.php`, work through the TODOs using your
 creativity and judgment. Please only update the api.php file.
 
+TODO A: Improve readability and clean up the following code to prepare for adding new handlers and routes.
+* "echo json_encode()" is being repeated many times, I'll create on "response" method/function for that
+* if/else if/else can be hard to follow, I'll try to use one match(true) or if the condition keeps to one variable, one looping checking the route by param
+* I'll create one handler for each route
+* We have one structural code on api.php, I'm not sure if I should convert this code to OOP, even more because all updates will keep on api.php, everything will keep on api.php(as required) and I'll add the repeated code not linked with handlers to one kind of utils/helpers and I'll add one addapter pattern for repeated code linked with handler classes. I can develop in structural way as well, let me know pls if you would like to see it in structural code (: 
+* simplified logic
+
+// TODO B: Address performance concerns.
+* Limit and pagination could be good, pagination was added on all article list and prefix list(http://localhost:8989/api.php?prefix=b&page=2, http://localhost:8989/api.php?prefix=b&page=1)
+* cache-aside would be nice as well (We are indexing the list of articles, I think this like of list can delay 5 minutes to be updates). With it we can protect ourseves againg DDOS as well I think
+* indexes on database(BTREE) on prefix search(once it's on db)
+* Inecessary variables
+
+// TODO C: Identify and solve any potential security vulnerabilities in this code.
+* $this->response($this->app->fetch($_GET)); allowing to pass any param, updated to ['title' => $this->title]
+* Sanetization of inputs with Util::GetParam()
+* too long params, forcing the CPU and memory for comparisons
+* searching by title, if we don't have the article, one warning is returned, I think I can treat it to prevent "<b>Warning</b>:  file_get_contents(articles/Fooasdasd): Failed to open stream: No such file or directory in <b>/Users/.../untitled folder/takehome-task-main/src/App.php</b> on line <b>22</b><br />. Now I'm returning 404 if the file not exist -> $this->response(['error' => 'Article not found'], 404);
+[Thu Sep  4 07:38:43 2025] [::1]:55273 [200]: GET /api.php?prefix=foo
+[Thu Sep  4 07:38:43 2025] [::1]:55273 Closing
+[Thu Sep  4 07:38:43 2025] [::1]:55274 Accepted
+[Thu Sep  4 07:38:44 2025] [::1]:55275 Accepted
+[Thu Sep  4 07:38:45 2025] [::1]:55274 [200]: GET /api.php?prefix=fooasdsadsada
+[Thu Sep  4 07:38:45 2025] [::1]:55274 Closing
+[Thu Sep  4 07:38:47 2025] [::1]:55276 Accepted
+[Thu Sep  4 07:38:47 2025] [::1]:55275 [400]: GET /api.php?prefix=fooasdsadsadaasdasdsadsa
+[Thu Sep  4 07:38:47 2025] [::1]:55275 Closing
+[Thu Sep  4 07:38:57 2025] [::1]:55278 Accepted
+[Thu Sep  4 07:38:57 2025] [::1]:55276 [200]: GET /api.php?prefix=foo
+[Thu Sep  4 07:38:57 2025] [::1]:55276 Closing
+[Thu Sep  4 07:39:04 2025] [::1]:55279 Accepted
+[Thu Sep  4 07:39:04 2025] [::1]:55278 [404]: GET /api.php?title=sdasdas
+[Thu Sep  4 07:39:04 2025] [::1]:55278 Closing
+[Thu Sep  4 07:39:06 2025] [::1]:55280 Accepted
+[Thu Sep  4 07:39:06 2025] [::1]:55279 [200]: GET /api.php?title=Foo
+[Thu Sep  4 07:39:06 2025] [::1]:55279 Closing`
+
 Question 2
 
 Anyone who visits our site can make an edit. We would like to store the IP
@@ -32,13 +69,64 @@ range.
 Please describe your table(s) in markdown form, and describe any indexes you
 would add. (Don't actually implement a database.) For example:
 
-|Column name|Data type|Description          |
-|-----------|---------|---------------------|
-|article_id |integer  |The ID of the article|
-|...        |...      |...                  |
+|Table name: article_logs ("Primary key index on article_id.")                                                   |
+|Column name      |Data type|Description                                               |
+|-----------------|---------|----------------------------------------------------------|
+|article_id       |integer  | The ID of the article                                    |
+|current_version  |integer  |Version number of the article                             |
+|hash             |string   |Hash of the previous article version                      |
 
-Primary key index on article_id.
+* Primary key index on article_id.
 
+---
+
+|Table name: article_versioning_logs                                                                  |
+|Column name      |Data type                 |Description                                             |
+|-----------------|--------------------------|--------------------------------------------------------|
+|id               |integer                   |Record ID                                               |
+|article_id       |integer                   |The ID of the article                                   |
+|editor_ip        |varbinary(16)             |Editor IP (IPv4/IPv6 in binary format)                  |
+|article_category |string                    |Category of the Article                                 |
+|version          |integer                   |Version number of the article                           |
+|previous_hash    |string                    |Hash of the previous article version                    |
+|user_agent       |string                    |User-Agent                                              |
+|warning_level    |decimal(3, 2)             |article_size / Num. of suspicious words by category     |
+|created_at       |timestamp                 |When the log happened                                   |
+
+* Primary key index on id
+* Foreign key / index on article_id (links to article_logs.article_id)
+* Index on editor_ip (for IP range searches)
+* BTREE index on article_id
+* BTREE index on editor_ip
+* Composite BTREE index on (article_id, editor_ip)
+* Composite BTREE index on (article_id, version)
+* Composite BTREE index on (editor_ip, article_id)
+* BTREE index on article_category
+* FULLTEXT index on user_agent
+* BTREE index on previous_hash
+
+How to get the articles between IPs:
+SELECT DISTINCT article_id FROM article_versioning_logs
+WHERE editor_ip BETWEEN INET6_ATON('72.1.3.4') AND INET6_ATON('72.1.3.89')
+ORDER BY article_id;
+
+Structure explanation: article_logs would represent the main and important data of current version with primary_key on article_id, we would have one versioning table with metadata, information and logs of article each version.
+
+My first idea was to get the articles by IP, but thinking a bit more, these students could be running sophisticated operations with rotating IPs and VPSs, and in that case, it wouldn’t work as expected. For that reason, I’d like to ask if I could add a few more fields:
+	•	Article category – to understand their intentions and why they are vandalizing the content.
+	•	Version – we can easily check how many versions exist. If we have many versions with value 1, it means they are creating new articles as well, not just vandalizing old ones.
+	•	User agent – even if they use a bot, rotating IP, or VPS, we can check which browsers they are using or user agent used by bots.
+	•	Previous hash – similar to a blockchain, we create a hash to ensure that the previous version is indeed the real previous version and everything is consistent.
+
+Additional things we could do and add these data to article_logs (I plan to include these in the table):
+	•	Analyze the text emotions and text and add to one "human fast check" list.
+	•	Identify the most used words in detected vandalized articles (by category). We could create one "collection of words" to human article check, if this article has x% of it content with these words, it goes to human check
+* Note, I didn't develop this task for now but I've created the field "warning level", it would be results of emotions and words on article
+
+
+---
+
+*Note: I've seen some TODOs on index but I think it's part of other test because it's writtent o fix todos in api.php and based on time I think I shouldn't fix index.php, but I'm super excited to do it, let me know pls if I should fix todos on index.php as well (: *
 
 ## How your response will be evaluated
 

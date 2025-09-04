@@ -4,23 +4,152 @@ use App\App;
 
 require_once __DIR__ . '/vendor/autoload.php';
 
-$app = new App();
+/**
+ * This class contains util methods for the API
+ */
+class Utils
+{
+	static function cache(string $key, int $ttl, callable $callback): mixed
+	{
+		$file = sys_get_temp_dir() . "/cache_" . md5($key);
+
+		if (file_exists($file) && time() - filemtime($file) < $ttl) {
+			return unserialize(file_get_contents($file));
+		}
+
+		$data = $callback();
+
+		file_put_contents($file, serialize($data));
+
+		return $data;
+	}
+
+	static function getParam(string $name): ?string
+	{
+		$value = $_GET[$name] ?? null;
+
+		if (is_null($value)) {
+			return null;
+		}
+
+		return htmlspecialchars(trim($value), ENT_QUOTES, 'UTF-8');
+	}
+}
+
+/**
+ * This class contains base methods for handlers
+ */
+abstract class Handler
+{
+	const LIMIT = 10;
+	const TTL = 5;
+
+	abstract public function handle(): void;
+
+	protected function response(array|string $data, int $statusCode = 200): void
+	{
+		http_response_code($statusCode);
+		header('Content-Type: application/json; charset=utf-8');
+		echo json_encode(['content' => $data]);
+		exit;
+	}
+
+	protected function paginate($page)
+	{
+		$page = max(1, $page);
+
+		$from = ($page - 1) * self::LIMIT;
+
+		return ['from' => $from, 'to' => self::LIMIT];
+	}
+
+	protected function searchInputValidate($search){
+		if(strlen($search) > 15){
+			$this->response(['error' => 'Query is too long'], 400);
+		}
+	}
+}
+
+/**
+ * Class to handle list all articles route
+ */
+class ListAllHandler extends Handler
+{
+	public function __construct(private App $app, private ?int $page = 1) {}
+
+	public function handle(): void
+	{
+		$pagination = $this->paginate($this->page);
+
+		$articles = array_slice($this->app->getListOfArticles(), $pagination['from'], $pagination['to']);
+
+		$this->response($articles);
+	}
+}
+
+/**
+ * Class to handle list all articles starting for prefix route
+ */
+class PrefixSearchHandler extends Handler
+{
+	public function __construct(private App $app, private string $prefix, private ?int $page = 1) {
+		$this->searchInputValidate($this->prefix);
+	}
+
+	public function handle(): void
+	{
+		$filtered = Utils::cache('article_prefix_' . $this->prefix . '_page_' . $this->page, 5, function () {
+
+			$prefix = mb_strtolower($this->prefix);
+
+			$articles = array_filter(
+				$this->app->getListOfArticles(),
+				fn($article) => mb_stripos($article, $prefix) === 0
+			);
+
+			$pagination = $this->paginate($this->page);
+
+			return array_slice($articles, $pagination['from'], $pagination['to']);
+		});
+
+		$this->response(array_values($filtered));
+	}
+}
+
+/**
+ * Class to handle article by title
+ */
+class TitleSearchHandler extends Handler
+{
+	public function __construct(private App $app, private string $title) {
+		$this->searchInputValidate($this->title);
+	}
+
+	public function handle(): void
+	{
+		if (!file_exists("articles/{$this->title}")) {
+			$this->response(['error' => 'Article not found'], 404);
+		}
+
+		$this->response($this->app->fetch(['title' => $this->title]));
+	}
+}
+
 // TODO A: Improve readability and clean up the following code to prepare for adding new handlers and routes.
 // TODO B: Address performance concerns.
 // TODO C: Identify and solve any potential security vulnerabilities in this code.
+$app = new App();
 
-header( 'Content-Type: application/json' );
-if ( !isset( $_GET['title'] ) && !isset( $_GET['prefixsearch'] ) ) {
-	echo json_encode( [ 'content' => $app->getListOfArticles() ] );
-} elseif ( isset( $_GET['prefixsearch'] ) ) {
-	$list = $app->getListOfArticles();
-	$ma = [];
-	foreach ( $list as $ar ) {
-		if ( strpos( strtolower( $ar ), strtolower( $_GET['prefixsearch'] ) ) === 0 ) {
-			$ma[] = $ar;
-		}
+$routes = [
+	'prefix' => fn($value) => (new PrefixSearchHandler($app, $value, Utils::getParam('page')))->handle(),
+	'title'  => fn($value) => (new TitleSearchHandler($app, $value))->handle(),
+];
+
+foreach ($routes as $param => $handler) {
+	$search = Utils::getParam($param);
+	if (!is_null($search)) {
+		$handler($search);
 	}
-	echo json_encode( [ 'content' => $ma ] );
-} else {
-	echo json_encode( [ 'content' => $app->fetch( $_GET ) ] );
 }
+
+(new ListAllHandler($app, Utils::getParam('page')))->handle();
