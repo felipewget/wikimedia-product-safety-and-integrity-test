@@ -18,7 +18,11 @@ TODO A: Improve readability and clean up the following code to prepare for addin
 * "echo json_encode()" is being repeated many times, I'll create on "response" method/function for that
 * if/else if/else can be hard to follow, I'll try to use one match(true) or if the condition keeps to one variable, one looping checking the route by param
 * I'll create one handler for each route
-* We have one structural code on api.php, I'm not sure if I should convert this code to OOP, even more because all updates will keep on api.php, everything will keep on api.php(as required) but repeated code will go to one kind of utils/helpers and I'll add one addapter pattern for repeated code to handler classes. I can develop in structural way as well, let me know pls if you would like to see it in structural code (: 
+* We have one structural code on api.php, I'm not sure if I should convert this code to OOP, even more because all updates will keep on api.php, everything will keep on api.php(as required) and I'll add the repeated code not linked with handlers to one kind of utils/helpers and I'll add one addapter pattern for repeated code linked with handler classes. I can develop in structural way as well, let me know pls if you would like to see it in structural code (: 
+// TODO B: Address performance concerns.
+* Limit and pagination could be good, pagination was added on all article list and prefix list(http://localhost:8989/api.php?prefix=b&page=2, http://localhost:8989/api.php?prefix=b&page=1)
+* cache-aside would be nice as well (We are indexing the list of articles, I think this like of list can delay 5 minutes to be updates). With it we can protect ourseves againg DDOS as well I think
+* indexes on database(BTREE) on prefix search(once it's on db)
 
 Question 2
 
